@@ -33,7 +33,7 @@ Sema::Sema(std::string filename) : Filename(std::move(filename)) {}
 bool Sema::analyze(ProgramAST* program) {
     if (!program)
         return false;
-    program->analyze(*this);
+    program->accept(*this);
     return ErrorCount == 0;
 }
 
@@ -118,177 +118,177 @@ FunctionAST* Sema::lookupFunction(const std::string& name) {
     return found->second;
 }
 
-ExprType CallAST::analyze(Sema& S, const std::set<Symbol*>&) {
-    Func = S.lookupFunction(Callee);
-    if (!Func) {
-        S.error(Line, "call to undeclared function '" + Callee + "'");
-        Ty = ExprType::Error;
-        return Ty;
+ExprType Sema::visit(CallAST& node, const std::set<Symbol*>&) {
+    node.Func = lookupFunction(node.Callee);
+    if (!node.Func) {
+        error(node.Line, "call to undeclared function '" + node.Callee + "'");
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
-    Ty = ExprType::Int;
-    return Ty;
+    node.Ty = ExprType::Int;
+    return node.Ty;
 }
 
-ExprType NumberAST::analyze(Sema&, const std::set<Symbol*>&) {
-    Ty = ExprType::Int;
-    return Ty;
+ExprType Sema::visit(NumberAST& node, const std::set<Symbol*>&) {
+    node.Ty = ExprType::Int;
+    return node.Ty;
 }
 
-ExprType VariableAST::analyze(Sema& S, const std::set<Symbol*>& Assigned) {
-    Sym = S.lookup(Name);
-    if (!Sym) {
-        S.error(Line, "use of undeclared identifier '" + Name + "'");
-        Ty = ExprType::Error;
-        return Ty;
+ExprType Sema::visit(VariableAST& node, const std::set<Symbol*>& assigned) {
+    node.Sym = lookup(node.Name);
+    if (!node.Sym) {
+        error(node.Line, "use of undeclared identifier '" + node.Name + "'");
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
-    if (!Assigned.count(Sym))
-        S.error(Line, "'" + Name + "' is used uninitialized");
-    Ty = ExprType::Int;
-    return Ty;
+    if (!assigned.count(node.Sym))
+        error(node.Line, "'" + node.Name + "' is used uninitialized");
+    node.Ty = ExprType::Int;
+    return node.Ty;
 }
 
-ExprType BinaryAST::analyze(Sema& S, const std::set<Symbol*>& Assigned) {
-    ExprType left = LHS->analyze(S, Assigned);
-    ExprType right = RHS->analyze(S, Assigned);
+ExprType Sema::visit(BinaryAST& node, const std::set<Symbol*>& assigned) {
+    ExprType left = node.LHS->accept(*this, assigned);
+    ExprType right = node.RHS->accept(*this, assigned);
     if (isError(left) || isError(right)) {
-        Ty = ExprType::Error;
-        return Ty;
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
     if (left != ExprType::Int || right != ExprType::Int) {
-        S.error(Line, std::string("operands of '") + Op + "' must be int");
-        Ty = ExprType::Error;
-        return Ty;
+        error(node.Line, std::string("operands of '") + node.Op + "' must be int");
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
-    Ty = ExprType::Int;
-    return Ty;
+    node.Ty = ExprType::Int;
+    return node.Ty;
 }
 
-ExprType CompAST::analyze(Sema& S, const std::set<Symbol*>& Assigned) {
-    ExprType left = LHS->analyze(S, Assigned);
-    ExprType right = RHS->analyze(S, Assigned);
+ExprType Sema::visit(CompAST& node, const std::set<Symbol*>& assigned) {
+    ExprType left = node.LHS->accept(*this, assigned);
+    ExprType right = node.RHS->accept(*this, assigned);
     if (isError(left) || isError(right)) {
-        Ty = ExprType::Error;
-        return Ty;
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
     if (left != ExprType::Int || right != ExprType::Int) {
-        S.error(Line, std::string("operands of '") + cmpOpName(Op) + "' must be int");
-        Ty = ExprType::Error;
-        return Ty;
+        error(node.Line, std::string("operands of '") + cmpOpName(node.Op) + "' must be int");
+        node.Ty = ExprType::Error;
+        return node.Ty;
     }
-    Ty = ExprType::Bool;
-    return Ty;
+    node.Ty = ExprType::Bool;
+    return node.Ty;
 }
 
-Flow VarDeclAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    Sym = S.declare(Name, Line);
-    return Flow{std::move(Assigned), false};
+Flow Sema::visit(VarDeclAST& node, std::set<Symbol*> assigned) {
+    node.Sym = declare(node.Name, node.Line);
+    return Flow{std::move(assigned), false};
 }
 
-Flow AssignAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    Sym = S.lookup(Name);
-    if (!Sym)
-        S.error(Line, "assignment to undeclared identifier '" + Name + "'");
+Flow Sema::visit(AssignAST& node, std::set<Symbol*> assigned) {
+    node.Sym = lookup(node.Name);
+    if (!node.Sym)
+        error(node.Line, "assignment to undeclared identifier '" + node.Name + "'");
 
-    ExprType value = Val->analyze(S, Assigned);
+    ExprType value = node.Val->accept(*this, assigned);
     if (!isError(value) && value != ExprType::Int)
-        S.error(Line, std::string("cannot assign ") + typeName(value) + " to int");
+        error(node.Line, std::string("cannot assign ") + typeName(value) + " to int");
 
-    if (Sym && value == ExprType::Int)
-        Assigned.insert(Sym);
-    return Flow{std::move(Assigned), false};
+    if (node.Sym && value == ExprType::Int)
+        assigned.insert(node.Sym);
+    return Flow{std::move(assigned), false};
 }
 
-Flow PrintAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    ExprType value = Val->analyze(S, Assigned);
+Flow Sema::visit(PrintAST& node, std::set<Symbol*> assigned) {
+    ExprType value = node.Val->accept(*this, assigned);
     if (!isError(value) && value != ExprType::Int)
-        S.error(Line, std::string("print expects int, got ") + typeName(value));
-    return Flow{std::move(Assigned), false};
+        error(node.Line, std::string("print expects int, got ") + typeName(value));
+    return Flow{std::move(assigned), false};
 }
 
-Flow CallStmtAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    Call->analyze(S, Assigned);
-    return Flow{std::move(Assigned), false};
+Flow Sema::visit(CallStmtAST& node, std::set<Symbol*> assigned) {
+    node.Call->accept(*this, assigned);
+    return Flow{std::move(assigned), false};
 }
 
-Flow ReturnAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    ExprType value = Val->analyze(S, Assigned);
+Flow Sema::visit(ReturnAST& node, std::set<Symbol*> assigned) {
+    ExprType value = node.Val->accept(*this, assigned);
     if (!isError(value) && value != ExprType::Int)
-        S.error(Line, std::string("return value must be int, got ") + typeName(value));
-    DoesReturn = true;
-    return Flow{std::move(Assigned), true};
+        error(node.Line, std::string("return value must be int, got ") + typeName(value));
+    node.DoesReturn = true;
+    return Flow{std::move(assigned), true};
 }
 
-static void checkCondition(Sema& S, ExprAST* cond, const char* kind) {
+static void checkCondition(Sema& sema, ExprAST* cond, const char* kind) {
     ExprType type = cond->type();
     if (isError(type) || type == ExprType::Bool)
         return;
-    S.error(cond->line(), std::string("condition of ") + kind + " must be bool, got " + typeName(type));
+    sema.error(cond->line(), std::string("condition of ") + kind + " must be bool, got " + typeName(type));
 }
 
-Flow IfAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    Cond->analyze(S, Assigned);
-    checkCondition(S, Cond, "if");
+Flow Sema::visit(IfAST& node, std::set<Symbol*> assigned) {
+    node.Cond->accept(*this, assigned);
+    checkCondition(*this, node.Cond, "if");
 
-    Flow thenFlow = Then ? Then->analyze(S, Assigned) : Flow{Assigned, false};
-    Flow elseFlow = Else ? Else->analyze(S, Assigned) : Flow{Assigned, false};
+    Flow thenFlow = node.Then ? node.Then->accept(*this, assigned) : Flow{assigned, false};
+    Flow elseFlow = node.Else ? node.Else->accept(*this, assigned) : Flow{assigned, false};
 
     std::set<Symbol*> outgoing;
-    if (Else) {
+    if (node.Else) {
         std::set_intersection(
             thenFlow.Assigned.begin(), thenFlow.Assigned.end(),
             elseFlow.Assigned.begin(), elseFlow.Assigned.end(),
             std::inserter(outgoing, outgoing.end()));
     } else {
-        outgoing = Assigned;
+        outgoing = assigned;
     }
 
-    DoesReturn = Else && thenFlow.AlwaysReturns && elseFlow.AlwaysReturns;
-    return Flow{std::move(outgoing), DoesReturn};
+    node.DoesReturn = node.Else && thenFlow.AlwaysReturns && elseFlow.AlwaysReturns;
+    return Flow{std::move(outgoing), node.DoesReturn};
 }
 
-Flow WhileAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    Cond->analyze(S, Assigned);
-    checkCondition(S, Cond, "while");
-    if (Body)
-        Body->analyze(S, Assigned);
-    return Flow{std::move(Assigned), false};
+Flow Sema::visit(WhileAST& node, std::set<Symbol*> assigned) {
+    node.Cond->accept(*this, assigned);
+    checkCondition(*this, node.Cond, "while");
+    if (node.Body)
+        node.Body->accept(*this, assigned);
+    return Flow{std::move(assigned), false};
 }
 
-Flow BlockAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
-    S.enterScope();
+Flow Sema::visit(BlockAST& node, std::set<Symbol*> assigned) {
+    enterScope();
     bool reachable = true;
     bool alwaysReturns = false;
-    for (StmtAST* stmt : Stmts) {
+    for (StmtAST* stmt : node.Stmts) {
         if (!reachable)
-            S.error(stmt->line(), "unreachable code");
-        Flow next = stmt->analyze(S, Assigned);
+            error(stmt->line(), "unreachable code");
+        Flow next = stmt->accept(*this, assigned);
         if (reachable && next.AlwaysReturns) {
             alwaysReturns = true;
             reachable = false;
         }
-        Assigned = std::move(next.Assigned);
+        assigned = std::move(next.Assigned);
     }
-    S.leaveScope();
-    DoesReturn = alwaysReturns;
-    return Flow{std::move(Assigned), alwaysReturns};
+    leaveScope();
+    node.DoesReturn = alwaysReturns;
+    return Flow{std::move(assigned), alwaysReturns};
 }
 
-void FunctionAST::analyze(Sema& S) {
-    Flow body = Body->analyze(S, {});
+void Sema::visit(FunctionAST& function) {
+    Flow body = function.Body->accept(*this, {});
     if (!body.AlwaysReturns)
-        S.warning(Line, "control reaches end of function '" + Name + "'");
+        warning(function.Line, "control reaches end of function '" + function.Name + "'");
 }
 
-void ProgramAST::analyze(Sema& S) {
-    for (FunctionAST* function : Functions)
-        S.declareFunction(function);
+void Sema::visit(ProgramAST& program) {
+    for (FunctionAST* function : program.Functions)
+        declareFunction(function);
 
     bool hasMain = false;
-    for (FunctionAST* function : Functions) {
+    for (FunctionAST* function : program.Functions) {
         if (function->name() == "main")
             hasMain = true;
-        function->analyze(S);
+        function->accept(*this);
     }
     if (!hasMain)
-        S.error(Line, "program must define 'main'");
+        error(program.Line, "program must define 'main'");
 }
