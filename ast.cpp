@@ -3,7 +3,8 @@
 llvm::LLVMContext TheContext;
 llvm::IRBuilder<> Builder(TheContext);
 llvm::Module* TheModule = nullptr;
-std::map<std::string, llvm::AllocaInst*> NamedValues;
+FunctionAST* ProgramAST = nullptr;
+const char* SourcePath = "<stdin>";
 
 llvm::Value* LogErrorV(const char* str) {
     fprintf(stderr, "Error: %s\n", str);
