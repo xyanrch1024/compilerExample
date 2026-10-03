@@ -17,6 +17,8 @@ void yyerror(const char* s);
     ExprAST* expr;
     StmtAST* stmt;
     BlockAST* block;
+    FunctionAST* func;
+    ProgramAST* program;
 }
 
 %token <numval> T_NUM
@@ -26,20 +28,33 @@ void yyerror(const char* s);
 %token T_LT T_GT T_LE T_GE T_EQ T_NE
 
 %type <expr> expr add_expr term factor
-%type <stmt> stmt var_decl assign_stmt print_stmt return_stmt if_stmt while_stmt
+%type <stmt> stmt var_decl assign_stmt print_stmt return_stmt if_stmt while_stmt call_stmt
 %type <block> block stmt_list
+%type <func> function
+%type <program> function_list
 
 %expect 1
 
 %%
 
 program
-    : function
+    : function_list                 { Program = $1; }
+    ;
+
+function_list
+    : function                      {
+        $$ = new ProgramAST(@1.first_line);
+        $$->add($1);
+    }
+    | function_list function        {
+        $1->add($2);
+        $$ = $1;
+    }
     ;
 
 function
     : T_INT T_ID '(' ')' block      {
-        ProgramAST = new FunctionAST(std::string($2), $5, @1.first_line);
+        $$ = new FunctionAST(std::string($2), $5, @1.first_line);
         free($2);
     }
     ;
@@ -66,6 +81,7 @@ stmt
     | return_stmt ';'               { $$ = $1; }
     | if_stmt                       { $$ = $1; }
     | while_stmt                    { $$ = $1; }
+    | call_stmt ';'                 { $$ = $1; }
     | block                         { $$ = $1; }
     ;
 
@@ -89,6 +105,13 @@ print_stmt
 
 return_stmt
     : T_RETURN expr                 { $$ = new ReturnAST($2, @1.first_line); }
+    ;
+
+call_stmt
+    : T_ID '(' ')'                  {
+        $$ = new CallStmtAST(new CallAST(std::string($1), @1.first_line), @1.first_line);
+        free($1);
+    }
     ;
 
 if_stmt
@@ -125,6 +148,10 @@ term
 
 factor
     : T_NUM                         { $$ = new NumberAST($1, @1.first_line); }
+    | T_ID '(' ')'                  {
+        $$ = new CallAST(std::string($1), @1.first_line);
+        free($1);
+    }
     | T_ID                          {
         $$ = new VariableAST(std::string($1), @1.first_line);
         free($1);

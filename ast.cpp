@@ -3,7 +3,7 @@
 llvm::LLVMContext TheContext;
 llvm::IRBuilder<> Builder(TheContext);
 llvm::Module* TheModule = nullptr;
-FunctionAST* ProgramAST = nullptr;
+ProgramAST* Program = nullptr;
 const char* SourcePath = "<stdin>";
 
 llvm::Value* LogErrorV(const char* str) {

@@ -29,16 +29,16 @@ int main(int argc, char* argv[]) {
     int parseStatus = yyparse();
     if (file)
         fclose(file);
-    if (parseStatus != 0 || !ProgramAST)
+    if (parseStatus != 0 || !Program)
         return 1;
 
     Sema sema(SourcePath);
-    sema.analyze(ProgramAST);
+    sema.analyze(Program);
     sema.report(stderr);
     if (sema.hasErrors())
         return 1;
 
-    ProgramAST->codegen();
+    Program->codegen();
     TheModule->print(llvm::outs(), nullptr);
     return 0;
 }
