@@ -1,17 +1,34 @@
 #ifndef SEMA_H
 #define SEMA_H
 
-#include "ast.h"
+#include "visitor.h"
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-class Sema {
+class Sema : public ExprSemaVisitor, public StmtSemaVisitor {
 public:
     explicit Sema(std::string filename);
 
     bool analyze(ProgramAST* program);
+    void visit(FunctionAST& function);
+    void visit(ProgramAST& program);
+
+    ExprType visit(NumberAST& node, const std::set<Symbol*>& assigned) override;
+    ExprType visit(VariableAST& node, const std::set<Symbol*>& assigned) override;
+    ExprType visit(BinaryAST& node, const std::set<Symbol*>& assigned) override;
+    ExprType visit(CompAST& node, const std::set<Symbol*>& assigned) override;
+    ExprType visit(CallAST& node, const std::set<Symbol*>& assigned) override;
+
+    Flow visit(VarDeclAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(AssignAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(PrintAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(ReturnAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(CallStmtAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(IfAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(WhileAST& node, std::set<Symbol*> assigned) override;
+    Flow visit(BlockAST& node, std::set<Symbol*> assigned) override;
     void report(FILE* out) const;
     bool hasErrors() const { return ErrorCount != 0; }
 

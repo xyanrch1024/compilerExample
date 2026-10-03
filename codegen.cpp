@@ -20,27 +20,25 @@ llvm::Function* getPrintfDecl() {
     return F;
 }
 
-// --- ExprAST ---
-
-llvm::Value* CallAST::codegen() {
-    return Builder.CreateCall(Func->ir(), {}, "calltmp");
+llvm::Value* Codegen::visit(CallAST& node) {
+    return Builder.CreateCall(node.Func->ir(), {}, "calltmp");
 }
 
-llvm::Value* NumberAST::codegen() {
-    return llvm::ConstantInt::get(TheContext, llvm::APInt(32, Val, true));
+llvm::Value* Codegen::visit(NumberAST& node) {
+    return llvm::ConstantInt::get(TheContext, llvm::APInt(32, node.Val, true));
 }
 
-llvm::Value* VariableAST::codegen() {
-    if (!Sym || !Sym->Addr)
+llvm::Value* Codegen::visit(VariableAST& node) {
+    if (!node.Sym || !node.Sym->Addr)
         return LogErrorV("unknown variable");
-    return Builder.CreateLoad(llvm::Type::getInt32Ty(TheContext), Sym->Addr, Sym->Name.c_str());
+    return Builder.CreateLoad(llvm::Type::getInt32Ty(TheContext), node.Sym->Addr, node.Sym->Name.c_str());
 }
 
-llvm::Value* BinaryAST::codegen() {
-    llvm::Value* L = LHS->codegen();
-    llvm::Value* R = RHS->codegen();
+llvm::Value* Codegen::visit(BinaryAST& node) {
+    llvm::Value* L = node.LHS->accept(*this);
+    llvm::Value* R = node.RHS->accept(*this);
     if (!L || !R) return nullptr;
-    switch (Op) {
+    switch (node.Op) {
         case '+': return Builder.CreateAdd(L, R, "addtmp");
         case '-': return Builder.CreateSub(L, R, "subtmp");
         case '*': return Builder.CreateMul(L, R, "multmp");
@@ -49,12 +47,12 @@ llvm::Value* BinaryAST::codegen() {
     }
 }
 
-llvm::Value* CompAST::codegen() {
-    llvm::Value* L = LHS->codegen();
-    llvm::Value* R = RHS->codegen();
+llvm::Value* Codegen::visit(CompAST& node) {
+    llvm::Value* L = node.LHS->accept(*this);
+    llvm::Value* R = node.RHS->accept(*this);
     if (!L || !R) return nullptr;
     llvm::CmpInst::Predicate Pred;
-    switch (Op) {
+    switch (node.Op) {
         case T_LT: Pred = llvm::CmpInst::ICMP_SLT; break;
         case T_GT: Pred = llvm::CmpInst::ICMP_SGT; break;
         case T_LE: Pred = llvm::CmpInst::ICMP_SLE; break;
@@ -66,25 +64,23 @@ llvm::Value* CompAST::codegen() {
     return Builder.CreateICmp(Pred, L, R, "cmptmp");
 }
 
-// --- StmtAST ---
-
-llvm::Value* VarDeclAST::codegen() {
+llvm::Value* Codegen::visit(VarDeclAST& node) {
     llvm::Function* F = Builder.GetInsertBlock()->getParent();
-    Sym->Addr = CreateEntryBlockAlloca(F, Sym->Name);
-    return Sym->Addr;
+    node.Sym->Addr = CreateEntryBlockAlloca(F, node.Sym->Name);
+    return node.Sym->Addr;
 }
 
-llvm::Value* AssignAST::codegen() {
-    if (!Sym || !Sym->Addr)
+llvm::Value* Codegen::visit(AssignAST& node) {
+    if (!node.Sym || !node.Sym->Addr)
         return LogErrorV("unknown variable");
-    llvm::Value* V = Val->codegen();
+    llvm::Value* V = node.Val->accept(*this);
     if (!V) return nullptr;
-    Builder.CreateStore(V, Sym->Addr);
+    Builder.CreateStore(V, node.Sym->Addr);
     return V;
 }
 
-llvm::Value* PrintAST::codegen() {
-    llvm::Value* V = Val->codegen();
+llvm::Value* Codegen::visit(PrintAST& node) {
+    llvm::Value* V = node.Val->accept(*this);
     if (!V) return nullptr;
 
     llvm::Function* PrintfF = getPrintfDecl();
@@ -92,19 +88,19 @@ llvm::Value* PrintAST::codegen() {
     return Builder.CreateCall(PrintfF, {FormatStr, V}, "printfcall");
 }
 
-llvm::Value* CallStmtAST::codegen() {
-    return Call->codegen();
+llvm::Value* Codegen::visit(CallStmtAST& node) {
+    return node.Call->accept(*this);
 }
 
-llvm::Value* ReturnAST::codegen() {
-    llvm::Value* V = Val->codegen();
+llvm::Value* Codegen::visit(ReturnAST& node) {
+    llvm::Value* V = node.Val->accept(*this);
     if (!V) return nullptr;
     Builder.CreateRet(V);
     return V;
 }
 
-llvm::Value* IfAST::codegen() {
-    llvm::Value* CondV = Cond->codegen();
+llvm::Value* Codegen::visit(IfAST& node) {
+    llvm::Value* CondV = node.Cond->accept(*this);
     if (!CondV) return nullptr;
 
     llvm::Function* F = Builder.GetInsertBlock()->getParent();
@@ -115,13 +111,13 @@ llvm::Value* IfAST::codegen() {
     Builder.CreateCondBr(CondV, ThenBB, ElseBB);
 
     Builder.SetInsertPoint(ThenBB);
-    if (Then) Then->codegen();
+    if (node.Then) node.Then->accept(*this);
     if (!Builder.GetInsertBlock()->getTerminator())
         Builder.CreateBr(MergeBB);
 
     F->insert(F->end(), ElseBB);
     Builder.SetInsertPoint(ElseBB);
-    if (Else) Else->codegen();
+    if (node.Else) node.Else->accept(*this);
     if (!Builder.GetInsertBlock()->getTerminator())
         Builder.CreateBr(MergeBB);
 
@@ -131,7 +127,7 @@ llvm::Value* IfAST::codegen() {
     return nullptr;
 }
 
-llvm::Value* WhileAST::codegen() {
+llvm::Value* Codegen::visit(WhileAST& node) {
     llvm::Function* F = Builder.GetInsertBlock()->getParent();
 
     llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(TheContext, "whilecond", F);
@@ -140,13 +136,13 @@ llvm::Value* WhileAST::codegen() {
 
     Builder.CreateBr(CondBB);
     Builder.SetInsertPoint(CondBB);
-    llvm::Value* CondV = Cond->codegen();
+    llvm::Value* CondV = node.Cond->accept(*this);
     if (!CondV) return nullptr;
     Builder.CreateCondBr(CondV, LoopBB, AfterBB);
 
     F->insert(F->end(), LoopBB);
     Builder.SetInsertPoint(LoopBB);
-    if (Body) Body->codegen();
+    if (node.Body) node.Body->accept(*this);
     if (!Builder.GetInsertBlock()->getTerminator())
         Builder.CreateBr(CondBB);
 
@@ -156,40 +152,42 @@ llvm::Value* WhileAST::codegen() {
     return nullptr;
 }
 
-llvm::Value* BlockAST::codegen() {
-    for (auto* S : Stmts) {
-        S->codegen();
-    }
+llvm::Value* Codegen::visit(BlockAST& node) {
+    for (StmtAST* stmt : node.Stmts)
+        stmt->accept(*this);
     return nullptr;
 }
 
-// --- FunctionAST ---
-
-void FunctionAST::declare() {
+void Codegen::declare(FunctionAST& function) {
     llvm::FunctionType* FT = llvm::FunctionType::get(
         llvm::Type::getInt32Ty(TheContext),
         false
     );
-    IR = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, TheModule);
+    function.IR = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, function.Name, TheModule);
 }
 
-llvm::Function* FunctionAST::codegen() {
-    llvm::BasicBlock* BB = llvm::BasicBlock::Create(TheContext, "entry", IR);
+llvm::Function* Codegen::visit(FunctionAST& function) {
+    llvm::BasicBlock* BB = llvm::BasicBlock::Create(TheContext, "entry", function.IR);
     Builder.SetInsertPoint(BB);
 
-    Body->codegen();
+    function.Body->accept(*this);
 
     if (!Builder.GetInsertBlock()->getTerminator()) {
         Builder.CreateRet(llvm::ConstantInt::get(TheContext, llvm::APInt(32, 0, true)));
     }
 
-    llvm::verifyFunction(*IR, &llvm::errs());
-    return IR;
+    llvm::verifyFunction(*function.IR, &llvm::errs());
+    return function.IR;
+}
+
+void Codegen::visit(ProgramAST& program) {
+    for (FunctionAST* function : program.Functions)
+        declare(*function);
+    for (FunctionAST* function : program.Functions)
+        function->accept(*this);
 }
 
 void ProgramAST::codegen() {
-    for (FunctionAST* function : Functions)
-        function->declare();
-    for (FunctionAST* function : Functions)
-        function->codegen();
+    Codegen codegen;
+    accept(codegen);
 }

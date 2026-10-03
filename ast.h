@@ -13,6 +13,11 @@
 #include <llvm/IR/Verifier.h>
 
 class Sema;
+class Codegen;
+class ExprSemaVisitor;
+class ExprCodegenVisitor;
+class StmtSemaVisitor;
+class StmtCodegenVisitor;
 
 enum class ExprType {
     Int,
@@ -44,6 +49,9 @@ extern ProgramAST* Program;
 extern const char* SourcePath;
 
 class ExprAST {
+    friend class Sema;
+    friend class Codegen;
+
 protected:
     int Line;
     ExprType Ty = ExprType::Error;
@@ -51,64 +59,77 @@ protected:
 
 public:
     virtual ~ExprAST() = default;
-    virtual llvm::Value* codegen() = 0;
-    virtual ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) = 0;
+    virtual ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) = 0;
+    virtual llvm::Value* accept(ExprCodegenVisitor& visitor) = 0;
     int line() const { return Line; }
     ExprType type() const { return Ty; }
 };
 
 class NumberAST : public ExprAST {
+    friend class Sema;
+    friend class Codegen;
     int Val;
 
 public:
     NumberAST(int v, int line) : ExprAST(line), Val(v) {}
-    llvm::Value* codegen() override;
-    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+    ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) override;
+    llvm::Value* accept(ExprCodegenVisitor& visitor) override;
 };
 
 class VariableAST : public ExprAST {
+    friend class Sema;
+    friend class Codegen;
     std::string Name;
     Symbol* Sym = nullptr;
 
 public:
     VariableAST(const std::string& n, int line) : ExprAST(line), Name(n) {}
-    llvm::Value* codegen() override;
-    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+    ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) override;
+    llvm::Value* accept(ExprCodegenVisitor& visitor) override;
 };
 
 class BinaryAST : public ExprAST {
+    friend class Sema;
+    friend class Codegen;
     char Op;
     ExprAST *LHS, *RHS;
 
 public:
     BinaryAST(char op, ExprAST* l, ExprAST* r, int line)
         : ExprAST(line), Op(op), LHS(l), RHS(r) {}
-    llvm::Value* codegen() override;
-    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+    ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) override;
+    llvm::Value* accept(ExprCodegenVisitor& visitor) override;
 };
 
 class CompAST : public ExprAST {
+    friend class Sema;
+    friend class Codegen;
     int Op;
     ExprAST *LHS, *RHS;
 
 public:
     CompAST(int op, ExprAST* l, ExprAST* r, int line)
         : ExprAST(line), Op(op), LHS(l), RHS(r) {}
-    llvm::Value* codegen() override;
-    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+    ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) override;
+    llvm::Value* accept(ExprCodegenVisitor& visitor) override;
 };
 
 class CallAST : public ExprAST {
+    friend class Sema;
+    friend class Codegen;
     std::string Callee;
     FunctionAST* Func = nullptr;
 
 public:
     CallAST(const std::string& callee, int line) : ExprAST(line), Callee(callee) {}
-    llvm::Value* codegen() override;
-    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+    ExprType accept(ExprSemaVisitor& visitor, const std::set<Symbol*>& assigned) override;
+    llvm::Value* accept(ExprCodegenVisitor& visitor) override;
 };
 
 class StmtAST {
+    friend class Sema;
+    friend class Codegen;
+
 protected:
     int Line;
     bool DoesReturn = false;
@@ -116,23 +137,27 @@ protected:
 
 public:
     virtual ~StmtAST() = default;
-    virtual llvm::Value* codegen() = 0;
-    virtual Flow analyze(Sema& S, std::set<Symbol*> Assigned) = 0;
+    virtual Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) = 0;
+    virtual llvm::Value* accept(StmtCodegenVisitor& visitor) = 0;
     int line() const { return Line; }
     bool alwaysReturns() const { return DoesReturn; }
 };
 
 class VarDeclAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     std::string Name;
     Symbol* Sym = nullptr;
 
 public:
     VarDeclAST(const std::string& n, int line) : StmtAST(line), Name(n) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class AssignAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     std::string Name;
     ExprAST* Val;
     Symbol* Sym = nullptr;
@@ -140,38 +165,46 @@ class AssignAST : public StmtAST {
 public:
     AssignAST(const std::string& n, ExprAST* v, int line)
         : StmtAST(line), Name(n), Val(v) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class PrintAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     ExprAST* Val;
 
 public:
     PrintAST(ExprAST* v, int line) : StmtAST(line), Val(v) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class ReturnAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     ExprAST* Val;
 
 public:
     ReturnAST(ExprAST* v, int line) : StmtAST(line), Val(v) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class CallStmtAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     CallAST* Call;
 
 public:
     CallStmtAST(CallAST* call, int line) : StmtAST(line), Call(call) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class IfAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     ExprAST* Cond;
     StmtAST* Then;
     StmtAST* Else;
@@ -179,33 +212,39 @@ class IfAST : public StmtAST {
 public:
     IfAST(ExprAST* c, StmtAST* t, StmtAST* e, int line)
         : StmtAST(line), Cond(c), Then(t), Else(e) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class WhileAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     ExprAST* Cond;
     StmtAST* Body;
 
 public:
     WhileAST(ExprAST* c, StmtAST* b, int line)
         : StmtAST(line), Cond(c), Body(b) {}
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class BlockAST : public StmtAST {
+    friend class Sema;
+    friend class Codegen;
     std::vector<StmtAST*> Stmts;
 
 public:
     BlockAST() : StmtAST(0) {}
     void add(StmtAST* s) { Stmts.push_back(s); }
     void setLine(int line) { Line = line; }
-    llvm::Value* codegen() override;
-    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+    Flow accept(StmtSemaVisitor& visitor, std::set<Symbol*> assigned) override;
+    llvm::Value* accept(StmtCodegenVisitor& visitor) override;
 };
 
 class FunctionAST {
+    friend class Sema;
+    friend class Codegen;
     std::string Name;
     BlockAST* Body;
     int Line;
@@ -216,20 +255,22 @@ public:
         : Name(n), Body(b), Line(line) {}
     const std::string& name() const { return Name; }
     llvm::Function* ir() const { return IR; }
-    void declare();
-    llvm::Function* codegen();
-    void analyze(Sema& S);
+    void accept(Sema& sema);
+    llvm::Function* accept(Codegen& codegen);
     int line() const { return Line; }
 };
 
 class ProgramAST {
+    friend class Sema;
+    friend class Codegen;
     std::vector<FunctionAST*> Functions;
     int Line;
 
 public:
     explicit ProgramAST(int line) : Line(line) {}
     void add(FunctionAST* function) { Functions.push_back(function); }
-    void analyze(Sema& S);
+    void accept(Sema& sema);
+    void accept(Codegen& codegen);
     void codegen();
     int line() const { return Line; }
 };
