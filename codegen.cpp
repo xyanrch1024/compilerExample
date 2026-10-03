@@ -22,6 +22,10 @@ llvm::Function* getPrintfDecl() {
 
 // --- ExprAST ---
 
+llvm::Value* CallAST::codegen() {
+    return Builder.CreateCall(Func->ir(), {}, "calltmp");
+}
+
 llvm::Value* NumberAST::codegen() {
     return llvm::ConstantInt::get(TheContext, llvm::APInt(32, Val, true));
 }
@@ -86,6 +90,10 @@ llvm::Value* PrintAST::codegen() {
     llvm::Function* PrintfF = getPrintfDecl();
     llvm::Value* FormatStr = Builder.CreateGlobalStringPtr("%d\n", "printfmt");
     return Builder.CreateCall(PrintfF, {FormatStr, V}, "printfcall");
+}
+
+llvm::Value* CallStmtAST::codegen() {
+    return Call->codegen();
 }
 
 llvm::Value* ReturnAST::codegen() {
@@ -157,20 +165,16 @@ llvm::Value* BlockAST::codegen() {
 
 // --- FunctionAST ---
 
-llvm::Function* FunctionAST::codegen() {
+void FunctionAST::declare() {
     llvm::FunctionType* FT = llvm::FunctionType::get(
         llvm::Type::getInt32Ty(TheContext),
         false
     );
-    llvm::Function* F = llvm::Function::Create(
-        FT, llvm::Function::ExternalLinkage, Name, TheModule
-    );
+    IR = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, TheModule);
+}
 
-    if (Name != "main") {
-        F->setName(Name);
-    }
-
-    llvm::BasicBlock* BB = llvm::BasicBlock::Create(TheContext, "entry", F);
+llvm::Function* FunctionAST::codegen() {
+    llvm::BasicBlock* BB = llvm::BasicBlock::Create(TheContext, "entry", IR);
     Builder.SetInsertPoint(BB);
 
     Body->codegen();
@@ -179,6 +183,13 @@ llvm::Function* FunctionAST::codegen() {
         Builder.CreateRet(llvm::ConstantInt::get(TheContext, llvm::APInt(32, 0, true)));
     }
 
-    llvm::verifyFunction(*F, &llvm::errs());
-    return F;
+    llvm::verifyFunction(*IR, &llvm::errs());
+    return IR;
+}
+
+void ProgramAST::codegen() {
+    for (FunctionAST* function : Functions)
+        function->declare();
+    for (FunctionAST* function : Functions)
+        function->codegen();
 }

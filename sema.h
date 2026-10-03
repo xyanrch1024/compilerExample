@@ -11,7 +11,7 @@ class Sema {
 public:
     explicit Sema(std::string filename);
 
-    bool analyze(FunctionAST* program);
+    bool analyze(ProgramAST* program);
     void report(FILE* out) const;
     bool hasErrors() const { return ErrorCount != 0; }
 
@@ -23,6 +23,8 @@ public:
     void leaveScope();
     Symbol* declare(const std::string& name, int line);
     Symbol* lookup(const std::string& name);
+    FunctionAST* declareFunction(FunctionAST* function);
+    FunctionAST* lookupFunction(const std::string& name);
 
 private:
     struct Diag {
@@ -35,6 +37,7 @@ private:
 
     std::string Filename;
     std::vector<std::map<std::string, Symbol*>> Scopes;
+    std::map<std::string, FunctionAST*> Functions;
     std::vector<std::unique_ptr<Symbol>> Symbols;
     std::vector<Diag> Diags;
     int ErrorCount = 0;

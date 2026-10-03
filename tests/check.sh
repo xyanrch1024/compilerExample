@@ -120,6 +120,10 @@ compile_and_run "$ROOT/tests/ok_both_return.c" "" 3
 compile_and_run "$ROOT/tests/ok_return_while.c" "" 9
 compile_and_run "$ROOT/tests/ok_while_local.c" $'0\n1\n2' 0
 compile_and_run "$ROOT/tests/warn_no_return.c" $'1' 0 "control reaches end of function"
+compile_and_run "$ROOT/tests/ok_call.c" $'6' 0
+compile_and_run "$ROOT/tests/ok_call_order.c" $'4' 0
+compile_and_run "$ROOT/tests/ok_call_stmt.c" $'2' 0
+compile_and_run "$ROOT/tests/ok_func_shadow.c" $'1\n8' 0
 
 expect_error "$ROOT/tests/err_redef.c" \
     "err_redef.c:3: error: redefinition of 'a'" \
@@ -152,6 +156,16 @@ expect_error "$ROOT/tests/err_multi.c" \
 expect_error "$ROOT/tests/err_syntax.c" \
     "err_syntax.c:" \
     ": error:"
+expect_error "$ROOT/tests/err_redef_fn.c" \
+    "err_redef_fn.c:4: error: redefinition of function 'foo'" \
+    "err_redef_fn.c:1: note: previous definition is here"
+expect_error "$ROOT/tests/err_no_main.c" \
+    "err_no_main.c:1: error: program must define 'main'"
+expect_error "$ROOT/tests/err_undef_fn.c" \
+    "err_undef_fn.c:2: error: call to undeclared function 'bar'" \
+    "err_undef_fn.c:3: error: call to undeclared function 'baz'"
+expect_error "$ROOT/tests/err_printf_name.c" \
+    "err_printf_name.c:1: error: function name 'printf' is reserved"
 
 echo
 echo "$pass passed, $fail failed"

@@ -30,7 +30,7 @@ static bool isError(ExprType type) {
 
 Sema::Sema(std::string filename) : Filename(std::move(filename)) {}
 
-bool Sema::analyze(FunctionAST* program) {
+bool Sema::analyze(ProgramAST* program) {
     if (!program)
         return false;
     program->analyze(*this);
@@ -95,6 +95,38 @@ Symbol* Sema::lookup(const std::string& name) {
             return found->second;
     }
     return nullptr;
+}
+
+FunctionAST* Sema::declareFunction(FunctionAST* function) {
+    if (function->name() == "printf")
+        error(function->line(), "function name 'printf' is reserved");
+
+    auto found = Functions.find(function->name());
+    if (found != Functions.end()) {
+        error(function->line(), "redefinition of function '" + function->name() + "'");
+        note(found->second->line(), "previous definition is here");
+        return found->second;
+    }
+    Functions[function->name()] = function;
+    return function;
+}
+
+FunctionAST* Sema::lookupFunction(const std::string& name) {
+    auto found = Functions.find(name);
+    if (found == Functions.end())
+        return nullptr;
+    return found->second;
+}
+
+ExprType CallAST::analyze(Sema& S, const std::set<Symbol*>&) {
+    Func = S.lookupFunction(Callee);
+    if (!Func) {
+        S.error(Line, "call to undeclared function '" + Callee + "'");
+        Ty = ExprType::Error;
+        return Ty;
+    }
+    Ty = ExprType::Int;
+    return Ty;
 }
 
 ExprType NumberAST::analyze(Sema&, const std::set<Symbol*>&) {
@@ -173,6 +205,11 @@ Flow PrintAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
     return Flow{std::move(Assigned), false};
 }
 
+Flow CallStmtAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
+    Call->analyze(S, Assigned);
+    return Flow{std::move(Assigned), false};
+}
+
 Flow ReturnAST::analyze(Sema& S, std::set<Symbol*> Assigned) {
     ExprType value = Val->analyze(S, Assigned);
     if (!isError(value) && value != ExprType::Int)
@@ -240,4 +277,18 @@ void FunctionAST::analyze(Sema& S) {
     Flow body = Body->analyze(S, {});
     if (!body.AlwaysReturns)
         S.warning(Line, "control reaches end of function '" + Name + "'");
+}
+
+void ProgramAST::analyze(Sema& S) {
+    for (FunctionAST* function : Functions)
+        S.declareFunction(function);
+
+    bool hasMain = false;
+    for (FunctionAST* function : Functions) {
+        if (function->name() == "main")
+            hasMain = true;
+        function->analyze(S);
+    }
+    if (!hasMain)
+        S.error(Line, "program must define 'main'");
 }

@@ -39,7 +39,8 @@ extern llvm::IRBuilder<> Builder;
 extern llvm::Module* TheModule;
 
 class FunctionAST;
-extern FunctionAST* ProgramAST;
+class ProgramAST;
+extern ProgramAST* Program;
 extern const char* SourcePath;
 
 class ExprAST {
@@ -93,6 +94,16 @@ class CompAST : public ExprAST {
 public:
     CompAST(int op, ExprAST* l, ExprAST* r, int line)
         : ExprAST(line), Op(op), LHS(l), RHS(r) {}
+    llvm::Value* codegen() override;
+    ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
+};
+
+class CallAST : public ExprAST {
+    std::string Callee;
+    FunctionAST* Func = nullptr;
+
+public:
+    CallAST(const std::string& callee, int line) : ExprAST(line), Callee(callee) {}
     llvm::Value* codegen() override;
     ExprType analyze(Sema& S, const std::set<Symbol*>& Assigned) override;
 };
@@ -151,6 +162,15 @@ public:
     Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
 };
 
+class CallStmtAST : public StmtAST {
+    CallAST* Call;
+
+public:
+    CallStmtAST(CallAST* call, int line) : StmtAST(line), Call(call) {}
+    llvm::Value* codegen() override;
+    Flow analyze(Sema& S, std::set<Symbol*> Assigned) override;
+};
+
 class IfAST : public StmtAST {
     ExprAST* Cond;
     StmtAST* Then;
@@ -189,12 +209,28 @@ class FunctionAST {
     std::string Name;
     BlockAST* Body;
     int Line;
+    llvm::Function* IR = nullptr;
 
 public:
     FunctionAST(const std::string& n, BlockAST* b, int line)
         : Name(n), Body(b), Line(line) {}
+    const std::string& name() const { return Name; }
+    llvm::Function* ir() const { return IR; }
+    void declare();
     llvm::Function* codegen();
     void analyze(Sema& S);
+    int line() const { return Line; }
+};
+
+class ProgramAST {
+    std::vector<FunctionAST*> Functions;
+    int Line;
+
+public:
+    explicit ProgramAST(int line) : Line(line) {}
+    void add(FunctionAST* function) { Functions.push_back(function); }
+    void analyze(Sema& S);
+    void codegen();
     int line() const { return Line; }
 };
 
