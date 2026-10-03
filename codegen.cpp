@@ -27,11 +27,9 @@ llvm::Value* NumberAST::codegen() {
 }
 
 llvm::Value* VariableAST::codegen() {
-    auto it = NamedValues.find(Name);
-    if (it == NamedValues.end()) {
-        return LogErrorV(("unknown variable: " + Name).c_str());
-    }
-    return Builder.CreateLoad(llvm::Type::getInt32Ty(TheContext), it->second, Name.c_str());
+    if (!Sym || !Sym->Addr)
+        return LogErrorV("unknown variable");
+    return Builder.CreateLoad(llvm::Type::getInt32Ty(TheContext), Sym->Addr, Sym->Name.c_str());
 }
 
 llvm::Value* BinaryAST::codegen() {
@@ -68,19 +66,16 @@ llvm::Value* CompAST::codegen() {
 
 llvm::Value* VarDeclAST::codegen() {
     llvm::Function* F = Builder.GetInsertBlock()->getParent();
-    llvm::AllocaInst* Alloca = CreateEntryBlockAlloca(F, Name);
-    NamedValues[Name] = Alloca;
-    return Alloca;
+    Sym->Addr = CreateEntryBlockAlloca(F, Sym->Name);
+    return Sym->Addr;
 }
 
 llvm::Value* AssignAST::codegen() {
-    auto it = NamedValues.find(Name);
-    if (it == NamedValues.end()) {
-        return LogErrorV(("unknown variable: " + Name).c_str());
-    }
+    if (!Sym || !Sym->Addr)
+        return LogErrorV("unknown variable");
     llvm::Value* V = Val->codegen();
     if (!V) return nullptr;
-    Builder.CreateStore(V, it->second);
+    Builder.CreateStore(V, Sym->Addr);
     return V;
 }
 
@@ -113,14 +108,14 @@ llvm::Value* IfAST::codegen() {
 
     Builder.SetInsertPoint(ThenBB);
     if (Then) Then->codegen();
-    Builder.CreateBr(MergeBB);
-    ThenBB = Builder.GetInsertBlock();
+    if (!Builder.GetInsertBlock()->getTerminator())
+        Builder.CreateBr(MergeBB);
 
     F->insert(F->end(), ElseBB);
     Builder.SetInsertPoint(ElseBB);
     if (Else) Else->codegen();
-    Builder.CreateBr(MergeBB);
-    ElseBB = Builder.GetInsertBlock();
+    if (!Builder.GetInsertBlock()->getTerminator())
+        Builder.CreateBr(MergeBB);
 
     F->insert(F->end(), MergeBB);
     Builder.SetInsertPoint(MergeBB);
@@ -144,7 +139,8 @@ llvm::Value* WhileAST::codegen() {
     F->insert(F->end(), LoopBB);
     Builder.SetInsertPoint(LoopBB);
     if (Body) Body->codegen();
-    Builder.CreateBr(CondBB);
+    if (!Builder.GetInsertBlock()->getTerminator())
+        Builder.CreateBr(CondBB);
 
     F->insert(F->end(), AfterBB);
     Builder.SetInsertPoint(AfterBB);
@@ -176,8 +172,6 @@ llvm::Function* FunctionAST::codegen() {
 
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(TheContext, "entry", F);
     Builder.SetInsertPoint(BB);
-
-    NamedValues.clear();
 
     Body->codegen();
 

@@ -2,11 +2,14 @@
 #include "parser.tab.hpp"
 #include "ast.h"
 void yyerror(const char* s);
+
+#define YY_USER_ACTION yylloc.first_line = yylloc.last_line = yylineno;
 %}
 
 %option noyywrap
 %option noinput
 %option nounput
+%option yylineno
 
 %%
 "int"           { return T_INT; }
