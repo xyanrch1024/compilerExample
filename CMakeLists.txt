@@ -41,10 +41,11 @@ add_executable(tinyc
     ast.cpp
     sema.cpp
     codegen.cpp
+    optimize.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/parser.tab.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/scanner.yy.cpp
 )
 
 target_include_directories(tinyc PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
-llvm_map_components_to_libnames(LLVM_LIBS core support)
+llvm_map_components_to_libnames(LLVM_LIBS core support passes analysis)
 target_link_libraries(tinyc ${LLVM_LIBS})
