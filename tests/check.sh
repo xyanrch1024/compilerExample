@@ -29,14 +29,37 @@ compile_and_run() {
     local expect_out="$2"
     local expect_exit="$3"
     local allow_warning="${4:-}"
+    local optflag="${5:-}"
+    local ir_has="${6:-}"
+    local ir_lacks="${7:-}"
     local name
     name="$(basename "$src")"
+    if [[ -n "$optflag" ]]; then
+        name="$name $optflag"
+    fi
     local dir
     dir="$(mktemp -d)"
 
-    if ! "$TINYC" "$src" >"$dir/out.ll" 2>"$dir/err.txt"; then
+    local -a cmd=("$TINYC")
+    if [[ -n "$optflag" ]]; then
+        cmd+=("$optflag")
+    fi
+    cmd+=("$src")
+    if ! "${cmd[@]}" >"$dir/out.ll" 2>"$dir/err.txt"; then
         bad "$name (compiler exit $?)"
         sed 's/^/    /' "$dir/err.txt"
+        rm -rf "$dir"
+        return
+    fi
+    if [[ -n "$ir_has" ]] && ! grep -q "$ir_has" "$dir/out.ll"; then
+        bad "$name (IR missing '$ir_has')"
+        sed 's/^/    /' "$dir/out.ll"
+        rm -rf "$dir"
+        return
+    fi
+    if [[ -n "$ir_lacks" ]] && grep -q "$ir_lacks" "$dir/out.ll"; then
+        bad "$name (IR contains '$ir_lacks')"
+        sed 's/^/    /' "$dir/out.ll"
         rm -rf "$dir"
         return
     fi
@@ -110,7 +133,7 @@ expect_error() {
     rm -rf "$dir"
 }
 
-compile_and_run "$ROOT/test.c" $'50' 0
+compile_and_run "$ROOT/test.c" $'50' 0 "" "" "alloca"
 compile_and_run "$ROOT/test2.c" $'5\n0\n1\n2' 42
 compile_and_run "$ROOT/tests/ok_prec.c" $'1\n7' 0
 compile_and_run "$ROOT/tests/ok_scope.c" $'2\n1' 0
@@ -152,6 +175,32 @@ expect_error "$ROOT/tests/err_multi.c" \
 expect_error "$ROOT/tests/err_syntax.c" \
     "err_syntax.c:" \
     ": error:"
+
+compile_and_run "$ROOT/test.c" $'50' 0 "" "-O1"
+compile_and_run "$ROOT/test.c" $'50' 0 "" "-O2" "i32 50" "alloca"
+compile_and_run "$ROOT/test.c" $'50' 0 "" "-O3" "i32 50" "alloca"
+compile_and_run "$ROOT/test2.c" $'5\n0\n1\n2' 42 "" "-O2"
+compile_and_run "$ROOT/tests/ok_prec.c" $'1\n7' 0 "" "-O2"
+compile_and_run "$ROOT/tests/ok_scope.c" $'2\n1' 0 "" "-O2"
+compile_and_run "$ROOT/tests/ok_while_local.c" $'0\n1\n2' 0 "" "-O2"
+compile_and_run "$ROOT/tests/ok_both_return.c" "" 3 "" "-O2"
+compile_and_run "$ROOT/tests/ok_return_while.c" "" 9 "" "-O2"
+compile_and_run "$ROOT/tests/warn_no_return.c" $'1' 0 "control reaches end of function" "-O2"
+
+opt_dir="$(mktemp -d)"
+opt_status=0
+"$TINYC" -O4 "$ROOT/test.c" >"$opt_dir/out.ll" 2>"$opt_dir/err.txt" || opt_status=$?
+if [[ "$opt_status" -eq 0 ]]; then
+    bad "-O4 (compiler accepted it)"
+elif [[ -s "$opt_dir/out.ll" ]]; then
+    bad "-O4 (emitted IR)"
+elif ! grep -q "unknown optimization level: -O4" "$opt_dir/err.txt"; then
+    bad "-O4 (missing diagnostic)"
+    sed 's/^/    /' "$opt_dir/err.txt"
+else
+    ok "-O4"
+fi
+rm -rf "$opt_dir"
 
 echo
 echo "$pass passed, $fail failed"
